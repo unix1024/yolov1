@@ -18,7 +18,7 @@ def draw(image, bbox, classes, show_conf=False, conf_th=0.0):
     keys = list(classes.keys())
     values = list(classes.values())
 
-    font = ImageFont.truetype('arial.ttf', 10)
+    font = ImageFont.truetype('Arial.ttf', 10)
 
     transform = F.ToPILImage()
     image = transform(image)

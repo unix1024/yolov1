@@ -1,4 +1,4 @@
-from dataset.transform import *
+from transform import *
 
 from torch.utils.data import Dataset
 import xml.etree.ElementTree as ET
@@ -43,12 +43,12 @@ class VOC0712Dataset(Dataset):
         layout_txt = None
         if mode == 'train':
             root = [root[0], root[0], root[1], root[1]]
-            layout_txt = [r'ImageSets\Main\train.txt', r'ImageSets\Main\val.txt',
-                          r'ImageSets\Main\train.txt', r'ImageSets\Main\val.txt']
+            layout_txt = [r'ImageSets/Main/train.txt', r'ImageSets/Main/val.txt',
+                          r'ImageSets/Main/train.txt', r'ImageSets/Main/val.txt']
         elif mode == 'test':
             if not isinstance(root, list):
                 root = [root]
-            layout_txt = [r'ImageSets\Main\test.txt']
+            layout_txt = [r'ImageSets/Main/test.txt']
         assert layout_txt is not None, 'Unknown mode'
 
         self.transforms = transforms
@@ -96,17 +96,18 @@ class VOC0712Dataset(Dataset):
 
 
 if __name__ == "__main__":
-    from dataset.draw_bbox import draw
+    from draw_bbox import draw
 
-    root0712 = [r'F:\AI\Dataset\VOC2007\VOCdevkit\VOC2007', r'F:\AI\Dataset\VOC2012\VOCdevkit\VOC2012']
+    root0712 = [r'VOCdevkit/VOC2007', r'VOCdevkit/VOC2012']
 
     transforms = Compose([
         ToTensor(),
-        RandomHorizontalFlip(0.5),
+        RandomHorizontalFlip(1),
         Resize(448)
     ])
     ds = VOC0712Dataset(root0712, 'classes.json', transforms, 'train', get_info=True)
     print(len(ds))
+
     for i, (image, label, image_name, image_size) in enumerate(ds):
         if i <= 1000:
             continue
@@ -117,3 +118,4 @@ if __name__ == "__main__":
             print(tuple(image.size()[1:]))
             draw(image, label, ds.classes)
     print('VOC2007Dataset')
+

@@ -1,4 +1,4 @@
-from dataset.data import xml2dict
+from data import xml2dict
 
 import xml.etree.ElementTree as ET
 from tqdm import tqdm
@@ -8,7 +8,7 @@ import os
 
 json_path = './classes.json'
 
-root = r'F:\AI\Dataset\VOC2012\VOCdevkit\VOC2012'
+root = r'VOCdevkit/VOC2007'
 annotation_root = os.path.join(root, 'Annotations')
 annotation_list = os.listdir(annotation_root)
 annotation_list = [os.path.join(annotation_root, a) for a in annotation_list]

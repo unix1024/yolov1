@@ -39,7 +39,7 @@ class RandomHorizontalFlip:
             image = image.flip(-1)      # 水平翻转
             bbox = label[:, :4]
             # bbox: xmin, ymin, xmax, ymax
-            bbox[:, [0, 2]] = width - bbox[:, [0, 2]]
+            bbox[:, [2, 0]] = width - bbox[:, [0, 2]]
             label[:, :4] = bbox
         return image, label
 
