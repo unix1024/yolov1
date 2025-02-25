@@ -169,6 +169,10 @@ class yolo_loss:
         wh_loss = torch.zeros_like(loss)
         conf_loss = torch.zeros_like(loss)
         class_loss = torch.zeros_like(loss)
+        print("\n\n target: ", target)
+        print("\n\n input: ",input)
+        print("\n\n conf: ",conf)
+        print("\n\n match: ",match)
         for i in range(self.s ** 2):
             # 0 xy_loss, 1 wh_loss, 2 conf_loss, 3 class_loss
             l = torch.zeros([4], dtype=torch.float, device=self.device)
@@ -359,11 +363,7 @@ if __name__ == "__main__":
                            [0.37, 0.25, 0.5, 0.3, 0.36, 0.14, 0.27, 0.26, 0.33, 0.36, 0.13, 0.9],
                            [0.12, 0.8, 0.26, 0.74, 0.8, 0.13, 0.83, 0.6, 0.75, 0.87, 0.75, 0.24],
                            [0.1, 0.27, 0.24, 0.37, 0.34, 0.15, 0.26, 0.27, 0.37, 0.34, 0.16, 0.93]]])
-    target = [torch.tensor([[200, 200, 353, 300, 1],
-                            [220, 230, 353, 300, 1],
-                            [15, 330, 200, 400, 0],
-                            [100, 50, 198, 223, 1],
-                            [30, 60, 150, 240, 1]], dtype=torch.float)]
+    target = [torch.tensor([[200, 200, 353, 300, 1]], dtype=torch.float)]
 
     criterion = yolo_loss('cpu', 2, 2, image_size, 2)
     loss = criterion(input, target)
