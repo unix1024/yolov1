@@ -1,5 +1,6 @@
 from dataset.data import VOC0712Dataset
 from dataset.transform import *
+from dataset.draw_bbox import draw
 from model.yolo import yolo, yolo_loss
 from scheduler import Scheduler
 
@@ -17,14 +18,15 @@ import warnings
 
 
 class CFG:
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    root0712 = [r'F:\AI\Dataset\VOC2007\VOCdevkit\VOC2007', r'F:\AI\Dataset\VOC2012\VOCdevkit\VOC2012']
-    class_path = r'./dataset/classes.json'
-    model_root = r'./log/ex7'
+    # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    class_path = r'dataset/classes.json'
+    root0712 = [r'dataset/VOCdevkit/VOC2007', r'dataset/VOCdevkit/VOC2012']
+    model_root = r'log/ex7'
     model_path = None
     
     backbone = 'resnet'
-    pretrain = 'model/resnet50-19c8e357.pth'
+    pretrain = None
     with_amp = True
     S = 7
     B = 2
@@ -91,7 +93,7 @@ def train():
     train_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, 'train')
     test_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, 'test')
 
-    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=True,
+    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=False,
                           num_workers=CFG.num_workers, collate_fn=collate_fn)
     test_dl = DataLoader(test_ds, batch_size=CFG.batch_size, shuffle=False,
                          num_workers=CFG.num_workers, collate_fn=collate_fn)
@@ -130,6 +132,7 @@ def train():
         # Train
         yolo_net.train()
         loss_score = AverageMeter()
+
         dl = tqdm(train_dl, total=len(train_dl))
         for images, labels in dl:
             batch_size = len(labels)
@@ -144,6 +147,7 @@ def train():
                 with autocast():
                     outputs = yolo_net(images)
                     loss, xy_loss, wh_loss, conf_loss, class_loss = criterion(outputs, labels)
+                    exit(0)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)

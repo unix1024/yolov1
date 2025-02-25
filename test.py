@@ -11,13 +11,15 @@ import json
 
 
 class CFG:
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    root = r'F:\AI\Dataset\VOC2007\VOCdevkit\VOC2007'
+    # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    # root = r'dataset/VOCdevkit/VOC2007'
+    root = [r'dataset/VOCdevkit/VOC2007', r'dataset/VOCdevkit/VOC2012']
     class_path = r'dataset/classes.json'
-    model_path = r'log/ex7/yolo.pth'
-    detpath = r'det\{}.txt'
-    annopath = r'F:\AI\Dataset\VOC2007\VOCdevkit\VOC2007\Annotations\{}.xml'
-    imagesetfile = r'F:\AI\Dataset\VOC2007\VOCdevkit\VOC2007\ImageSets\Main\test.txt'
+    model_path = r'log/ex7/yolo-trans1.pth'
+    detpath = r'det/{}.txt'
+    annopath = r'dataset/VOCdevkit/VOC2007/Annotations/{}.xml'
+    imagesetfile = r'dataset/VOCdevkit/VOC2007/ImageSets/Main/test.txt'
     classname = None
 
     test_range = None
@@ -37,7 +39,7 @@ class CFG:
 
     num_classes = 0
 
-    conf_th = 0.2
+    conf_th = 0.05
     iou_th = 0.5
 
 
@@ -57,7 +59,7 @@ def test():
     yolo_net = yolo(s=CFG.S, cell_out_ch=CFG.B * 5 + CFG.num_classes, backbone_name=CFG.backbone)
     yolo_net.to(device)
 
-    yolo_net.load_state_dict(torch.load(CFG.model_path))
+    yolo_net.load_state_dict(torch.load(CFG.model_path, map_location=device) )
 
     bboxes = []
     with torch.no_grad():
@@ -82,6 +84,8 @@ def test():
                         for i in range(len(output))]
                 bboxes += pred
     det_list = [[] for _ in range(CFG.num_classes)]
+
+    #bboxes = [ [filename, conf, x, y, w, h, class] ]
     for b in bboxes:
         det_list[b[-1]].append(b[:-1])
 
@@ -89,15 +93,17 @@ def test():
         map = 0
         for idx in range(CFG.num_classes):
             file_path = CFG.detpath.format(CFG.classname[idx])
+            if len(det_list[idx]) == 0: 
+                continue  # 没有检测到det_list[idx]
             txt = '\n'.join([' '.join([str(i) for i in item]) for item in det_list[idx]])
             with open(file_path, 'w') as f:
                 f.write(txt)
 
             rec, prec, ap = voc_eval(CFG.detpath, CFG.annopath, CFG.imagesetfile, CFG.classname[idx])
-            print(rec)
-            print(prec)
+            # print(rec)
+            # print(prec)
             map += ap
-            print(ap)
+            # print(ap)
 
         map /= CFG.num_classes
         print('mAP', map)

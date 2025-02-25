@@ -1,4 +1,4 @@
-from data import xml2dict
+from dataset.data import xml2dict
 
 import xml.etree.ElementTree as ET
 from tqdm import tqdm

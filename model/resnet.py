@@ -26,7 +26,7 @@ class ResNet_(ResNet):
 def _resnet(block, layers, pretrained):
     model = ResNet_(block, layers)
     if pretrained is not None:
-        state_dict = torch.load(pretrained)
+        state_dict = torch.load(pretrained, weights_only=False)
         model.load_state_dict(state_dict)
     return model
 

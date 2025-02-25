@@ -5,3 +5,11 @@ dataset/__pycache__
 .vscode
 .DS_Store
 test
+model/__pycache__
+model/resnet50-19c8e357.pth
+dataset/VOCtest_06-Nov-2007.tar
+__pycache__
+log/ex7
+det
+1.json
+test_onepic.py

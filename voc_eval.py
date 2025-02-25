@@ -111,7 +111,7 @@ def voc_eval(detpath,
     for imagename in imagenames:
         R = [obj for obj in recs[imagename] if obj['name'] == classname]
         bbox = np.array([x['bbox'] for x in R])
-        difficult = np.array([x['difficult'] for x in R]).astype(np.bool)
+        difficult = np.array([x['difficult'] for x in R]).astype(bool)
         det = [False] * len(R)
         npos = npos + sum(~difficult)
         class_recs[imagename] = {'bbox': bbox,
@@ -131,6 +131,8 @@ def voc_eval(detpath,
     # sort by confidence
     sorted_ind = np.argsort(-confidence)
     sorted_scores = np.sort(-confidence)
+    # print("##############: ", BB)
+    # print("--------------: ", sorted_ind)
     BB = BB[sorted_ind, :]
     image_ids = [image_ids[x] for x in sorted_ind]
 

@@ -1,4 +1,7 @@
-from transform import *
+# import sys
+# sys.path.append("..")
+
+from dataset.transform import *
 
 from torch.utils.data import Dataset
 import xml.etree.ElementTree as ET

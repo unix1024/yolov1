@@ -27,7 +27,7 @@ def draw(image, bbox, classes, show_conf=False, conf_th=0.0):
     bbox = np.array(bbox.cpu())
 
     for b in bbox:
-        print(b)
+        # print(b)
         if show_conf and b[-2] < conf_th:
             continue
         draw_image.rectangle(list(b[:4]), outline=colors[int(b[-1])], width=3)

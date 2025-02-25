@@ -1,7 +1,7 @@
 import numpy as np
 
-from model.darknet import DarkNet
-from model.resnet import resnet_1024ch
+from darknet import DarkNet
+from resnet import resnet_1024ch
 
 import torch
 import torch.nn as nn
@@ -78,6 +78,12 @@ class yolo_loss:
             match.append(m)
             conf.append(c)
 
+        # print(target[10])
+
+        # print(conf[10])
+
+        # exit(0)
+
         loss = torch.zeros([self.batch_size], dtype=torch.float, device=self.device)
         xy_loss = torch.zeros_like(loss)
         wh_loss = torch.zeros_like(loss)
@@ -118,7 +124,9 @@ class yolo_loss:
             if output[idx] is None:
                 output[idx] = torch.unsqueeze(label_c[i], dim=0)
             else:
-                output[idx] = torch.cat([output[idx], torch.unsqueeze(label_c[i], dim=0)], dim=0)
+                # 每个grid cell 只能有一个框
+                # output[idx] = torch.cat([output[idx], torch.unsqueeze(label_c[i], dim=0)], dim=0)
+                pass
         return output
 
     def match_pred_target(self, input, target):
@@ -126,26 +134,26 @@ class yolo_loss:
         conf = []
         with torch.no_grad():
             input_bbox = input[:, :self.b * 5].reshape(-1, self.b, 5)
-            ious = [match_get_iou(input_bbox[i], target[i], self.s, i)
-                    for i in range(self.s ** 2)]
-            for iou in ious:
-                if iou is None:
-                    match.append(None)
-                    conf.append(None)
-                else:
-                    keep = np.ones([len(iou[0])], dtype=bool)
-                    m = []
-                    c = []
-                    for i in range(self.b):
-                        if np.any(keep) == False:
-                            break
-                        idx = np.argmax(iou[i][keep])
-                        np_max = np.max(iou[i][keep])
-                        m.append(np.argwhere(iou[i] == np_max).tolist()[0][0])
-                        c.append(np.max(iou[i][keep]))
-                        keep[idx] = 0
-                    match.append(m)
-                    conf.append(c)
+            ious = [match_get_iou(input_bbox[i], target[i], self.s, i) for i in range(self.s ** 2)]
+            # for iou in ious:
+            #     if iou is None:
+            #         match.append(None)
+            #         conf.append(None)
+            #     else:
+            #         keep = np.ones([len(iou[0])], dtype=bool)
+            #         m = []
+            #         c = []
+            #         for i in range(self.b):
+            #             if np.any(keep) == False:
+            #                 break
+            #             idx = np.argmax(iou[i][keep])
+            #             np_max = np.max(iou[i][keep])
+            #             m.append(np.argwhere(iou[i] == np_max).tolist()[0][0])
+            #             c.append(np.max(iou[i][keep]))
+            #             keep[idx] = 0
+            #         match.append(m)
+            #         conf.append(c)
+            conf = ious
         return match, conf
 
     def compute_loss(self, input, target, match, conf):
@@ -171,18 +179,17 @@ class yolo_loss:
                 l[2] = torch.sum(torch.mul(0.5, torch.pow(input_bbox[i, :, 4] - obj_conf_target, 2)))
             else:
                 # λ_coord = 5
-                l[0] = torch.mul(5, torch.sum(torch.pow(input_bbox[i, :, 0] - target[i][match[i], 0], 2) +
-                                              torch.pow(input_bbox[i, :, 1] - target[i][match[i], 1], 2)))
+                l[0] = torch.mul(5, torch.sum(torch.pow(input_bbox[i, :, 0] - target[i][0, 0], 2) +
+                                              torch.pow(input_bbox[i, :, 1] - target[i][0, 1], 2)))
 
                 l[1] = torch.mul(5, torch.sum(torch.pow(torch.sqrt(input_bbox[i, :, 2]) -
-                                                        torch.sqrt(target[i][match[i], 2]), 2) +
+                                                        torch.sqrt(target[i][0, 2]), 2) +
                                               torch.pow(torch.sqrt(input_bbox[i, :, 3]) -
-                                                        torch.sqrt(target[i][match[i], 3]), 2)))
+                                                        torch.sqrt(target[i][0, 3]), 2)))
                 obj_conf_target = torch.tensor(conf[i], dtype=torch.float, device=self.device)
-                l[2] = torch.sum(torch.pow(input_bbox[i, :, 4] - obj_conf_target, 2))
+                l[2] = torch.sum(torch.pow(input_bbox[i, :, 4] - obj_conf_target.squeeze(dim=1), 2))
 
-                l[3] = ce_loss(input_class[i].unsqueeze(dim=0).repeat(target[i].size(0), 1),
-                               target[i][:, 4].long())
+                l[3] = ce_loss(input_class[i], target[i][0, 4].long())
             loss[i] = torch.sum(l)
             xy_loss[i] = torch.sum(l[0])
             wh_loss[i] = torch.sum(l[1])
@@ -331,6 +338,7 @@ def output_process(output, image_size, s, b, conf_th, iou_th):
 if __name__ == "__main__":
     import torch
 
+    torch.manual_seed(42)
     # Test yolo
     x = torch.randn([1, 3, 448, 448])
 

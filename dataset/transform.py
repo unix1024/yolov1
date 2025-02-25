@@ -18,8 +18,8 @@ class ToTensor:
         self.totensor = torchvision.transforms.ToTensor()
 
     def __call__(self, image, label):
-        image = self.totensor(image)
-        label = torch.tensor(label)
+        image = self.totensor(image).to(torch.float32)
+        label = torch.tensor(label, dtype=torch.float32)
         return image, label
 
 
