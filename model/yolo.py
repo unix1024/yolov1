@@ -1,7 +1,7 @@
 import numpy as np
 
-from darknet import DarkNet
-from resnet import resnet_1024ch
+from model.darknet import DarkNet
+from model.resnet import resnet_1024ch
 
 import torch
 import torch.nn as nn
@@ -169,10 +169,10 @@ class yolo_loss:
         wh_loss = torch.zeros_like(loss)
         conf_loss = torch.zeros_like(loss)
         class_loss = torch.zeros_like(loss)
-        print("\n\n target: ", target)
-        print("\n\n input: ",input)
-        print("\n\n conf: ",conf)
-        print("\n\n match: ",match)
+        # print("\n\n target: ", target)
+        # print("\n\n input: ",input)
+        # print("\n\n conf: ",conf)
+        # print("\n\n match: ",match)
         for i in range(self.s ** 2):
             # 0 xy_loss, 1 wh_loss, 2 conf_loss, 3 class_loss
             l = torch.zeros([4], dtype=torch.float, device=self.device)

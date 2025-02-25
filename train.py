@@ -18,15 +18,15 @@ import warnings
 
 
 class CFG:
-    # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    # device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     class_path = r'dataset/classes.json'
     root0712 = [r'dataset/VOCdevkit/VOC2007', r'dataset/VOCdevkit/VOC2012']
     model_root = r'log/ex7'
     model_path = None
     
     backbone = 'resnet'
-    pretrain = None
+    pretrain = 'model/resnet50-19c8e357.pth'
     with_amp = True
     S = 7
     B = 2
@@ -40,7 +40,7 @@ class CFG:
 
     start_epoch = 0
     epoch = 135
-    batch_size = 16
+    batch_size = 128
     num_workers = 2
 	
     freeze_backbone_till = 30
@@ -93,7 +93,7 @@ def train():
     train_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, 'train')
     test_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, 'test')
 
-    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=False,
+    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=True,
                           num_workers=CFG.num_workers, collate_fn=collate_fn)
     test_dl = DataLoader(test_ds, batch_size=CFG.batch_size, shuffle=False,
                          num_workers=CFG.num_workers, collate_fn=collate_fn)
@@ -147,7 +147,6 @@ def train():
                 with autocast():
                     outputs = yolo_net(images)
                     loss, xy_loss, wh_loss, conf_loss, class_loss = criterion(outputs, labels)
-                    exit(0)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)

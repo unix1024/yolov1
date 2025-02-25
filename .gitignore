@@ -13,3 +13,6 @@ log/ex7
 det
 1.json
 test_onepic.py
+.ipynb_checkpoints/
+dataset/.ipynb_checkpoints/
+model/.ipynb_checkpoints/
