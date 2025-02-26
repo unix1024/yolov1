@@ -37,7 +37,7 @@ def xml2dict(xml):
 
 
 class VOC0712Dataset(Dataset):
-    def __init__(self, root, class_path, transforms, mode, data_range=None, get_info=False):
+    def __init__(self, root, class_path, transforms, B, S, image_size, mode, data_range=None, get_info=False):
         # label: xmin, ymin, xmax, ymax, class
 
         with open(class_path, 'r') as f:
@@ -56,6 +56,10 @@ class VOC0712Dataset(Dataset):
 
         self.transforms = transforms
         self.get_info = get_info
+        self.b = B
+        self.s = S
+        self.num_class = len(self.classes)
+        self.image_size = image_size
 
         self.image_list = []
         self.annotation_list = []
@@ -72,15 +76,19 @@ class VOC0712Dataset(Dataset):
 
     def __getitem__(self, idx):
         image = Image.open(self.image_list[idx])
-        image_size = image.size
+        org_image_size = image.size
         label = self.label_process(self.annotation_list[idx])
 
         if self.transforms is not None:
             image, label = self.transforms(image, label)
+
+        # label [n * 5] ->  target [49 * 6]
+        target = self.label_direct2grid(label)
+
         if self.get_info:
-            return image, label, os.path.basename(self.image_list[idx]).split('.')[0], image_size
+            return image, label, target, os.path.basename(self.image_list[idx]).split('.')[0], org_image_size
         else:
-            return image, label
+            return image, label, target
 
     def label_process(self, annotation):
         xml = ET.parse(os.path.join(annotation)).getroot()
@@ -97,9 +105,48 @@ class VOC0712Dataset(Dataset):
         label = np.array(label)
         return label
 
+    def label_direct2grid(self, label):
+        """
+        :param label: dataset type: (pixel unit) [ n_bbox * 5 ]
+                                    xmin, ymin, xmax, ymax, class
+        :return: label: grid type: (% unit) [ s^2 * 6 ]
+                                    cx, cy, w, h, conf, class
+        """
+        output = torch.zeros(self.s ** 2, 6)
+        size = self.image_size // self.s  # 一个grid cell的尺寸
+
+        n_bbox = label.size(0)
+        label_c = torch.zeros_like(label)
+
+        # 把框转换成中心点和宽高，单位是像素
+        label_c[:, 0] = (label[:, 0] + label[:, 2]) / 2
+        label_c[:, 1] = (label[:, 1] + label[:, 3]) / 2
+        label_c[:, 2] = abs(label[:, 0] - label[:, 2])
+        label_c[:, 3] = abs(label[:, 1] - label[:, 3])
+        label_c[:, 4] = label[:, 4]
+
+        # 计算框所在的grid cell
+        idx_x = [int(label_c[i][0]) // size for i in range(n_bbox)]
+        idx_y = [int(label_c[i][1]) // size for i in range(n_bbox)]
+
+        # 单位转换成百分比
+        label_c[:, 0] = torch.div(torch.fmod(label_c[:, 0], size), size)
+        label_c[:, 1] = torch.div(torch.fmod(label_c[:, 1], size), size)
+        label_c[:, 2] = torch.div(label_c[:, 2], self.image_size)
+        label_c[:, 3] = torch.div(label_c[:, 3], self.image_size)
+
+        for i in range(n_bbox):
+            idx = idx_y[i] * self.s + idx_x[i]
+            # 如果置信度为0，就把框信息保存到grid cell（只保存一个框）
+            if output[idx][4] == 0:
+                output[idx][:4] = label_c[i][:4]    # 把转换后的坐标保存到对应的grid cell
+                output[idx][4] = 1                  # 设置置信度为1
+                output[idx][5] = label_c[i][4]      # 保存类别信息
+
+        return output
 
 if __name__ == "__main__":
-    from draw_bbox import draw
+    from dataset.draw_bbox import draw
 
     root0712 = [r'VOCdevkit/VOC2007', r'VOCdevkit/VOC2012']
 
@@ -108,17 +155,29 @@ if __name__ == "__main__":
         RandomHorizontalFlip(1),
         Resize(448)
     ])
-    ds = VOC0712Dataset(root0712, 'classes.json', transforms, 'train', get_info=True)
+    ds = VOC0712Dataset(root0712, 'classes.json', transforms, 2, 7, 448, 'train', get_info=True)
     print(len(ds))
 
-    for i, (image, label, image_name, image_size) in enumerate(ds):
-        if i <= 1000:
-            continue
-        elif i >= 1010:
+    for i, (image, label, target, org_image_name, org_image_size) in enumerate(ds):
+
+
+        print(image)
+        print(label)
+        print(target)
+        draw(image, label, ds.classes)
+
+        if i ==5:
             break
-        else:
-            print(label.dtype)
-            print(tuple(image.size()[1:]))
-            draw(image, label, ds.classes)
-    print('VOC2007Dataset')
+
+        # if i <= 1000:
+        #     continue
+        # elif i >= 1010:
+        #     break
+        # else:
+        #     print(label.dtype)
+        #     print(tuple(image.size()[1:]))
+        #     draw(image, label, ds.classes)
+
+    # print('VOC2007Dataset')
+
 

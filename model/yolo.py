@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+
+import sys
+sys.path.append("..")
+
 import numpy as np
 
 from model.darknet import DarkNet
@@ -54,36 +59,23 @@ class yolo_loss:
 
     def __call__(self, input, target):
         """
-        :param input: (yolo net output)
-                      tensor[s, s, b*5 + n_class] bbox: b * (c_x, c_y, w, h, obj_conf), class1_p, class2_p.. %
-        :param target: (dataset) tensor[n_bbox] bbox: x_min, ymin, xmax, ymax, class
+        :param input: (yolo net output) tensor[s, s, b*5 + n_class] 
+                        (c_x, c_y, w, h, obj_conf), (c_x, c_y, w, h, obj_conf), class1_p, class2_p
+        :param target: (ground truth)   tensor[s, s, 6]
+                        (c_x, c_y, w, h, obj_conf, class_number
         :return: loss tensor
-
-        grid type: [[bbox, ..], [], ..] -> bbox_in_grid: c_x(%), c_y(%), w(%), h(%), class(int)
-
-        target to grid type
-        if s = 7 -> grid idx: 1 -> 49
         """
         self.batch_size = input.size(0)
 
-        target = [self.label_direct2grid(target[i]) for i in range(self.batch_size)]
-
-        # IoU 匹配predictor和label
-        # 以Predictor为基准，每个Predictor都有且仅有一个需要负责的Target（前提是Predictor所在Grid Cell有Target中心位于此）
-        # x, y, w, h, c
+        # conf: [batch * 49 * 2], 分别计算预测框和真实框的iou, 计算出的值会最为 conf 的标签值
+        # match: [batch * 49], 标记哪个预测框的iou最大, 为None的表示没有物体的grid cell
         match = []
         conf = []
         for i in range(self.batch_size):
             m, c = self.match_pred_target(input[i], target[i])
             match.append(m)
             conf.append(c)
-
-        # print(target[10])
-
-        # print(conf[10])
-
-        # exit(0)
-
+        
         loss = torch.zeros([self.batch_size], dtype=torch.float, device=self.device)
         xy_loss = torch.zeros_like(loss)
         wh_loss = torch.zeros_like(loss)
@@ -94,73 +86,27 @@ class yolo_loss:
                 self.compute_loss(input[i], target[i], match[i], conf[i])
         return torch.mean(loss), torch.mean(xy_loss), torch.mean(wh_loss), torch.mean(conf_loss), torch.mean(class_loss)
 
-    def label_direct2grid(self, label):
-        """
-        :param label: dataset type: xmin, ymin, xmax, ymax, class
-        :return: label: grid type, if the grid doesn't have object -> put None
-        """
-        output = [None for _ in range(self.s ** 2)]
-        size = self.image_size // self.s  # h, w
-
-        n_bbox = label.size(0)
-        label_c = torch.zeros_like(label)
-
-        label_c[:, 0] = (label[:, 0] + label[:, 2]) / 2
-        label_c[:, 1] = (label[:, 1] + label[:, 3]) / 2
-        label_c[:, 2] = abs(label[:, 0] - label[:, 2])
-        label_c[:, 3] = abs(label[:, 1] - label[:, 3])
-        label_c[:, 4] = label[:, 4]
-
-        idx_x = [int(label_c[i][0]) // size for i in range(n_bbox)]
-        idx_y = [int(label_c[i][1]) // size for i in range(n_bbox)]
-
-        label_c[:, 0] = torch.div(torch.fmod(label_c[:, 0], size), size)
-        label_c[:, 1] = torch.div(torch.fmod(label_c[:, 1], size), size)
-        label_c[:, 2] = torch.div(label_c[:, 2], self.image_size)
-        label_c[:, 3] = torch.div(label_c[:, 3], self.image_size)
-
-        for i in range(n_bbox):
-            idx = idx_y[i] * self.s + idx_x[i]
-            if output[idx] is None:
-                output[idx] = torch.unsqueeze(label_c[i], dim=0)
-            else:
-                # 每个grid cell 只能有一个框
-                # output[idx] = torch.cat([output[idx], torch.unsqueeze(label_c[i], dim=0)], dim=0)
-                pass
-        return output
-
     def match_pred_target(self, input, target):
         match = []
-        conf = []
         with torch.no_grad():
             input_bbox = input[:, :self.b * 5].reshape(-1, self.b, 5)
             ious = [match_get_iou(input_bbox[i], target[i], self.s, i) for i in range(self.s ** 2)]
-            # for iou in ious:
-            #     if iou is None:
-            #         match.append(None)
-            #         conf.append(None)
-            #     else:
-            #         keep = np.ones([len(iou[0])], dtype=bool)
-            #         m = []
-            #         c = []
-            #         for i in range(self.b):
-            #             if np.any(keep) == False:
-            #                 break
-            #             idx = np.argmax(iou[i][keep])
-            #             np_max = np.max(iou[i][keep])
-            #             m.append(np.argwhere(iou[i] == np_max).tolist()[0][0])
-            #             c.append(np.max(iou[i][keep]))
-            #             keep[idx] = 0
-            #         match.append(m)
-            #         conf.append(c)
-            conf = ious
-        return match, conf
+            for iou in ious:
+                if iou is None:
+                    match.append(None)
+                else:
+                    idx = np.argmax(iou)
+                    match.append(idx)
+
+        return match, ious
 
     def compute_loss(self, input, target, match, conf):
         # 计算损失
         ce_loss = nn.CrossEntropyLoss()
 
+        # 49 * 2* 5
         input_bbox = input[:, :self.b * 5].reshape(-1, self.b, 5)
+        # 49 * 20
         input_class = input[:, self.b * 5:].reshape(-1, self.num_classes)
 
         input_bbox = torch.sigmoid(input_bbox)
@@ -177,28 +123,31 @@ class yolo_loss:
             # 0 xy_loss, 1 wh_loss, 2 conf_loss, 3 class_loss
             l = torch.zeros([4], dtype=torch.float, device=self.device)
             # Neg
-            if target[i] is None:
+            if match[i] == None:
                 # λ_noobj = 0.5
                 obj_conf_target = torch.zeros([self.b], dtype=torch.float, device=self.device)
                 l[2] = torch.sum(torch.mul(0.5, torch.pow(input_bbox[i, :, 4] - obj_conf_target, 2)))
             else:
                 # λ_coord = 5
-                l[0] = torch.mul(5, torch.sum(torch.pow(input_bbox[i, :, 0] - target[i][0, 0], 2) +
-                                              torch.pow(input_bbox[i, :, 1] - target[i][0, 1], 2)))
+                l[0] = torch.mul(5, torch.pow(input_bbox[i, match[i], 0] - target[i][0], 2) +
+                                    torch.pow(input_bbox[i, match[i], 1] - target[i][1], 2) )
 
-                l[1] = torch.mul(5, torch.sum(torch.pow(torch.sqrt(input_bbox[i, :, 2]) -
-                                                        torch.sqrt(target[i][0, 2]), 2) +
-                                              torch.pow(torch.sqrt(input_bbox[i, :, 3]) -
-                                                        torch.sqrt(target[i][0, 3]), 2)))
-                obj_conf_target = torch.tensor(conf[i], dtype=torch.float, device=self.device)
-                l[2] = torch.sum(torch.pow(input_bbox[i, :, 4] - obj_conf_target.squeeze(dim=1), 2))
+                l[1] = torch.mul(5, torch.pow(torch.sqrt(input_bbox[i, match[i], 2]) - torch.sqrt(target[i][2]), 2) +
+                                    torch.pow(torch.sqrt(input_bbox[i, match[i], 3]) - torch.sqrt(target[i][3]), 2) )
+                
+                not_match = 1 - match[i]
+                obj_conf_target = torch.zeros([1], dtype=torch.float, device=self.device)
 
-                l[3] = ce_loss(input_class[i], target[i][0, 4].long())
+                l[2] = torch.pow(input_bbox[i, match[i], 4] - conf[i][match[i]], 2) + \
+                       torch.mul(0.5, torch.pow(input_bbox[i, not_match,  4] - obj_conf_target, 2))
+
+                l[3] = ce_loss(input_class[i], target[i][5].long())
+
             loss[i] = torch.sum(l)
-            xy_loss[i] = torch.sum(l[0])
-            wh_loss[i] = torch.sum(l[1])
-            conf_loss[i] = torch.sum(l[2])
-            class_loss[i] = torch.sum(l[3])
+            xy_loss[i] = l[0]
+            wh_loss[i] = l[1]
+            conf_loss[i] = l[2]
+            class_loss[i] = l[3]
         return torch.sum(loss), torch.sum(xy_loss), torch.sum(wh_loss), torch.sum(conf_loss), torch.sum(class_loss)
 
 
@@ -215,12 +164,15 @@ def cxcywh2xyxy(bbox):
 
 def match_get_iou(bbox1, bbox2, s, idx):
     """
-    :param bbox1: [bbox, bbox, ..] tensor c_x(%), c_y(%), w(%), h(%), c
+    :param bbox1: [2*5] tensor c_x(%), c_y(%), w(%), h(%), conf
+    :param bbox2: [6] tensor c_x(%), c_y(%), w(%), h(%), conf, class
     :return:
     """
 
-    if bbox1 is None or bbox2 is None:
+    if bbox1 is None or bbox2[4] == 0:
         return None
+    
+    bbox2 = bbox2.unsqueeze(dim=0)
 
     bbox1 = np.array(bbox1.cpu())
     bbox2 = np.array(bbox2.cpu())
@@ -266,6 +218,7 @@ def get_iou(bbox1, bbox2):
         in_s = in_w * in_h
 
         iou = in_s / (s1[i] + s2 - in_s)
+        iou = iou.squeeze()
         ious.append(iou)
     ious = np.array(ious)
     return ious
@@ -339,32 +292,49 @@ def output_process(output, image_size, s, b, conf_th, iou_th):
     return bbox
 
 
+def collate_fn(batch):
+    images, labels, targets = zip(*batch) 
+    images = torch.stack(images)
+    targets = torch.stack(targets)
+    return images, labels, targets
+
+
 if __name__ == "__main__":
     import torch
+    from dataset.draw_bbox import draw
+    from dataset.transform import *
+    from dataset.data import VOC0712Dataset
+    from torch.utils.data import DataLoader
 
-    torch.manual_seed(42)
-    # Test yolo
-    x = torch.randn([1, 3, 448, 448])
+    device = torch.device("mps")
 
-    # B * 5 + n_classes
-    net = yolo(7, 2 * 5 + 20, 'resnet', pretrain=None)
-    # net = yolo(7, 2 * 5 + 20, 'darknet', pretrain=None)
-    print(net)
-    out = net(x)
-    print(out)
-    print(out.size())
+    root0712 = [r'../dataset/VOCdevkit/VOC2007', r'../dataset/VOCdevkit/VOC2012']
 
-    # Test yolo_loss
-    # 测试时假设 s=2, class=2
-    s = 2
-    b = 2
-    image_size = 448  # h, w
-    input = torch.tensor([[[0.45, 0.24, 0.22, 0.3, 0.35, 0.54, 0.66, 0.7, 0.8, 0.8, 0.17, 0.9],
-                           [0.37, 0.25, 0.5, 0.3, 0.36, 0.14, 0.27, 0.26, 0.33, 0.36, 0.13, 0.9],
-                           [0.12, 0.8, 0.26, 0.74, 0.8, 0.13, 0.83, 0.6, 0.75, 0.87, 0.75, 0.24],
-                           [0.1, 0.27, 0.24, 0.37, 0.34, 0.15, 0.26, 0.27, 0.37, 0.34, 0.16, 0.93]]])
-    target = [torch.tensor([[200, 200, 353, 300, 1]], dtype=torch.float)]
+    transforms = Compose([
+        ToTensor(),
+        RandomHorizontalFlip(1),
+        Resize(448)
+    ])
+    ds = VOC0712Dataset(root0712, '../dataset/classes.json', transforms, 2, 7, 448, 'train')
+    dl = DataLoader(ds, batch_size=16, shuffle=False, num_workers=2, collate_fn=collate_fn)
 
-    criterion = yolo_loss('cpu', 2, 2, image_size, 2)
-    loss = criterion(input, target)
+    iterator = iter(dl)
+    images, labels, targets = next(iterator)
+
+    print(images.shape)
+    print(len(labels))
+    print(targets.shape)
+
+    draw(images[0], labels[0], ds.classes)
+
+    net = yolo(7, 30, 'resnet', pretrain=None)
+    net.to(device)
+    criterion = yolo_loss("mps", 7, 2, 448, 20)
+
+    images = images.to(device, non_blocking=True)
+    targets = targets.to(device, non_blocking=True)
+
+    outputs = net(images)
+
+    loss = criterion(outputs, targets)
     print(loss)

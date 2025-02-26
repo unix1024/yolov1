@@ -18,8 +18,8 @@ import warnings
 
 
 class CFG:
-    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    # device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     class_path = r'dataset/classes.json'
     root0712 = [r'dataset/VOCdevkit/VOC2007', r'dataset/VOCdevkit/VOC2012']
     model_root = r'log/ex7'
@@ -40,7 +40,7 @@ class CFG:
 
     start_epoch = 0
     epoch = 135
-    batch_size = 128
+    batch_size = 16
     num_workers = 2
 	
     freeze_backbone_till = 30
@@ -61,8 +61,12 @@ class CFG:
 
 
 def collate_fn(batch):
-    return tuple(zip(*batch))
+    # batch: [(image, label, target), (image, label, target), ...]
+    images, labels, targets = zip(*batch) 
+    images = torch.stack(images)
+    targets = torch.stack(targets)
 
+    return images, labels, targets
 
 class AverageMeter:
     def __init__(self):
@@ -90,16 +94,16 @@ def train():
         classes = json.loads(json_str)
         CFG.num_classes = len(classes)
 
-    train_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, 'train')
-    test_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, 'test')
+    train_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, CFG.B, CFG.S, CFG.image_size, 'train')
+    test_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, CFG.B, CFG.S, CFG.image_size, 'test')
 
-    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=True,
+    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=False,
                           num_workers=CFG.num_workers, collate_fn=collate_fn)
     test_dl = DataLoader(test_ds, batch_size=CFG.batch_size, shuffle=False,
                          num_workers=CFG.num_workers, collate_fn=collate_fn)
 
     yolo_net = yolo(s=CFG.S, cell_out_ch=CFG.B * 5 + CFG.num_classes, backbone_name=CFG.backbone, pretrain=CFG.pretrain)
-    yolo_net.to(device)
+    yolo_net = yolo_net.to(device)
 
     if CFG.model_path is not None:
         yolo_net.load_state_dict(torch.load(CFG.model_path))
@@ -134,19 +138,21 @@ def train():
         loss_score = AverageMeter()
 
         dl = tqdm(train_dl, total=len(train_dl))
-        for images, labels in dl:
-            batch_size = len(labels)
+        for images, labels, targets in dl:
 
-            images = torch.stack(images)
-            images = images.to(device)
-            labels = [label.to(device) for label in labels]
+            # print(images.shape)
+            # print(len(labels))
+            # print(targets.shape)
+            # draw(images[0], labels[0], train_ds.classes)
 
+            images = images.to(device, non_blocking=True)
+            targets = targets.to(device, non_blocking=True)
             optimizer.zero_grad()
-
+            
             if CFG.with_amp:
                 with autocast():
                     outputs = yolo_net(images)
-                    loss, xy_loss, wh_loss, conf_loss, class_loss = criterion(outputs, labels)
+                    loss, xy_loss, wh_loss, conf_loss, class_loss = criterion(outputs, targets)
 
                 scaler.scale(loss).backward()
                 scaler.step(optimizer)
@@ -158,7 +164,7 @@ def train():
                 loss.backward()
                 optimizer.step()
 
-            loss_score.update(loss.detach().item(), batch_size)
+            loss_score.update(loss.detach().item(), CFG.batch_size)
             dl.set_postfix(Mode='Train', AvgLoss=loss_score.avg, Loss=loss.detach().item(),
                            Epoch=epoch, LR=optimizer.param_groups[0]['lr'])
         lrs.append(optimizer.param_groups[0]['lr'])
@@ -177,17 +183,15 @@ def train():
             # Test
             yolo_net.eval()
             dl = tqdm(test_dl, total=len(test_dl))
-            for images, labels in dl:
-                batch_size = len(labels)
+            for images, labels, targets in dl:
 
-                images = torch.stack(images)
-                images = images.to(device)
-                labels = [label.to(device) for label in labels]
+                images = images.to(device, non_blocking=True)
+                targets = targets.to(device, non_blocking=True)
 
                 outputs = yolo_net(images)
-                loss, xy_loss, wh_loss, conf_loss, class_loss = criterion(outputs, labels)
+                loss, xy_loss, wh_loss, conf_loss, class_loss = criterion(outputs, targets)
 
-                loss_score.update(loss.detach().item(), batch_size)
+                loss_score.update(loss.detach().item(), CFG.batch_size)
                 dl.set_postfix(Mode='Test', AvgLoss=loss_score.avg, Loss=loss.detach().item(), Epoch=epoch)
         test_losses.append(loss_score.avg)
         print('Test Loss: {:.4f}'.format(loss_score.avg))
