@@ -15,13 +15,13 @@ import json
 import os
 
 import warnings
-
+import time
 
 class CFG:
-    # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
-    device = 'mps' if torch.backends.mps.is_available() else 'cpu'
+    device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+    # device = 'mps' if torch.backends.mps.is_available() else 'cpu'
     class_path = r'dataset/classes.json'
-    root0712 = [r'dataset/VOCdevkit/VOC2007', r'dataset/VOCdevkit/VOC2012']
+    root0712 = [r'../autodl-tmp/VOCdevkit/VOC2007', r'../autodl-tmp/VOCdevkit/VOC2012']
     model_root = r'log/ex7'
     model_path = None
     
@@ -40,8 +40,8 @@ class CFG:
 
     start_epoch = 0
     epoch = 135
-    batch_size = 16
-    num_workers = 2
+    batch_size = 64
+    num_workers = 4
 	
     freeze_backbone_till = 30
 
@@ -97,10 +97,10 @@ def train():
     train_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, CFG.B, CFG.S, CFG.image_size, 'train')
     test_ds = VOC0712Dataset(CFG.root0712, CFG.class_path, CFG.transforms, CFG.B, CFG.S, CFG.image_size, 'test')
 
-    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=False,
-                          num_workers=CFG.num_workers, collate_fn=collate_fn)
+    train_dl = DataLoader(train_ds, batch_size=CFG.batch_size, shuffle=True,
+                          num_workers=CFG.num_workers, collate_fn=collate_fn, pin_memory=True)
     test_dl = DataLoader(test_ds, batch_size=CFG.batch_size, shuffle=False,
-                         num_workers=CFG.num_workers, collate_fn=collate_fn)
+                         num_workers=CFG.num_workers, collate_fn=collate_fn, pin_memory=True)
 
     yolo_net = yolo(s=CFG.S, cell_out_ch=CFG.B * 5 + CFG.num_classes, backbone_name=CFG.backbone, pretrain=CFG.pretrain)
     yolo_net = yolo_net.to(device)
@@ -137,6 +137,7 @@ def train():
         yolo_net.train()
         loss_score = AverageMeter()
 
+        start_time = None
         dl = tqdm(train_dl, total=len(train_dl))
         for images, labels, targets in dl:
 
@@ -144,9 +145,13 @@ def train():
             # print(len(labels))
             # print(targets.shape)
             # draw(images[0], labels[0], train_ds.classes)
-
-            images = images.to(device, non_blocking=True)
-            targets = targets.to(device, non_blocking=True)
+            images = images.to(device)
+            targets = targets.to(device)
+            
+            end_time = time.time()
+            if start_time != None:
+                print(f"Data loading time: {end_time - start_time:.4f} seconds")
+            
             optimizer.zero_grad()
             
             if CFG.with_amp:
@@ -167,6 +172,10 @@ def train():
             loss_score.update(loss.detach().item(), CFG.batch_size)
             dl.set_postfix(Mode='Train', AvgLoss=loss_score.avg, Loss=loss.detach().item(),
                            Epoch=epoch, LR=optimizer.param_groups[0]['lr'])
+            
+            start_time = time.time()
+            
+        
         lrs.append(optimizer.param_groups[0]['lr'])
         scheduler.step()
 
@@ -201,5 +210,6 @@ def train():
 
 
 if __name__ == '__main__':
+    torch.backends.cudnn.benchmark = True
     warnings.filterwarnings('ignore')
     train()
